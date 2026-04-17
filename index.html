@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hawaii Haus Daily Ops Report</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; background: #f5f5f5; margin: 0; padding: 20px; color: #1a1a1a; }
+  .container { max-width: 640px; margin: 0 auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+  .header { background: #1a3a2a; color: #fff; padding: 24px 28px; }
+  .header-top { display: flex; justify-content: space-between; align-items: flex-start; }
+  .brand { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.6; margin-bottom: 6px; }
+  .report-title { font-size: 22px; font-weight: 600; margin: 0; }
+  .report-date { font-size: 14px; opacity: 0.75; margin-top: 4px; }
+  .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; border-bottom: 1px solid #eee; }
+  .stat { padding: 16px 20px; border-right: 1px solid #eee; text-align: center; }
+  .stat:last-child { border-right: none; }
+  .stat-val { font-size: 28px; font-weight: 600; color: #1a3a2a; line-height: 1; }
+  .stat-label { font-size: 11px; color: #888; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .section { padding: 0 28px 20px; }
+  .shore-header { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #888; margin: 20px 0 10px; padding-bottom: 8px; border-bottom: 1px solid #eee; }
+  .prop-block { border: 1px solid #e8e8e8; border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+  .prop-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #fafafa; border-bottom: 1px solid #e8e8e8; }
+  .prop-name { font-size: 14px; font-weight: 600; color: #1a1a1a; }
+  .prop-backend { font-size: 12px; color: #aaa; margin-top: 1px; }
+  .prop-badge { font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 500; }
+  .badge-occupied { background: #e1f5ee; color: #0f6e56; }
+  .badge-vacant { background: #f1efe8; color: #5f5e5a; }
+  .task-row { display: flex; align-items: flex-start; gap: 10px; padding: 9px 16px; border-top: 1px solid #f0f0f0; font-size: 13px; color: #444; line-height: 1.5; }
+  .task-row:first-of-type { border-top: none; }
+  .tag { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 20px; white-space: nowrap; flex-shrink: 0; margin-top: 1px; }
+  .tag-checkin { background: #e1f5ee; color: #0f6e56; }
+  .tag-checkout { background: #faece7; color: #993c1d; }
+  .tag-trash { background: #faeeda; color: #854f0b; }
+  .tag-inspect { background: #eeedfe; color: #534ab7; }
+  .tag-idle { background: #f1efe8; color: #5f5e5a; }
+  .footer { background: #fafafa; border-top: 1px solid #eee; padding: 14px 28px; font-size: 12px; color: #aaa; display: flex; justify-content: space-between; align-items: center; }
+  .status-msg { font-size: 13px; color: #888; padding: 12px 16px; font-style: italic; }
+  #controls { max-width: 640px; margin: 16px auto 0; display: flex; gap: 10px; }
+  #controls button { background: #1a3a2a; color: #fff; border: none; border-radius: 8px; padding: 10px 18px; font-size: 13px; cursor: pointer; border-radius: 8px; }
+  #controls button:hover { background: #0f2a1a; }
+  #loading { text-align: center; padding: 40px; color: #888; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<div id="controls">
+  <button onclick="changeDay(-1)">&#8592; Previous day</button>
+  <button onclick="goToday()">Today</button>
+  <button onclick="changeDay(1)">Next day &#8594;</button>
+  <button onclick="loadAll()" style="margin-left:auto; background:#555;">Refresh calendars</button>
+</div>
+
+<div class="container" id="report">
+  <div id="loading">Loading Hawaii Haus calendars...</div>
+</div>
+
+<script>
+const PROPS = [
+  { name:"Kai Lani Ocean Villa", backend:"Keleka", shore:"South Shore", trash:[1,4],
+    url:"https://platform.hostfully.com/api/public/calendars/properties/c6e8f2a3-dfbb-454c-95d0-cdcee9d544e1/calendar.ics?showHold=true&igi=true" },
+  { name:"Kapiolani Ocean Villa", backend:"Kapiolani", shore:"North Shore", trash:[2],
+    url:"https://platform.hostfully.com/api/public/calendars/properties/f435de94-ce38-4218-94b6-3c44d0e950ae/calendar.ics?showHold=true&igi=true" },
+  { name:"Ohana Villa", backend:"Rooke", shore:"North Shore", trash:[2],
+    url:"https://platform.hostfully.com/api/public/calendars/properties/6991f288-e504-4176-9051-6b5c755458a5/calendar.ics?showHold=true&igi=true" },
+  { name:"Tiki Villa", backend:"Milo Hai", shore:"South Shore", trash:[3],
+    url:"https://platform.hostfully.com/api/public/calendars/properties/79b673a7-ae8c-406b-8821-fa024706cd07/calendar.ics?showHold=true&igi=true" }
+];
+
+const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+let calData = {};
+let currentDate = new Date();
+currentDate.setHours(0,0,0,0);
+
+function toYMD(d) {
+  return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function parseICS(text) {
+  const events = [];
+  const blocks = text.split('BEGIN:VEVENT');
+  for (let i = 1; i < blocks.length; i++) {
+    const b = blocks[i];
+    const summary = (b.match(/SUMMARY:(.+)/) || [])[1] || '';
+    const dtstart = (b.match(/DTSTART[^:]*:(\d+)/) || [])[1] || '';
+    const dtend = (b.match(/DTEND[^:]*:(\d+)/) || [])[1] || '';
+    const desc = (b.match(/DESCRIPTION:(.+)/) || [])[1] || '';
+    const gm = desc.match(/(\d+) guests/);
+    const guests = gm ? parseInt(gm[1]) : null;
+    const nm = summary.match(/<(.+?)>/);
+    const guestName = nm ? nm[1] : (summary.includes('Blocked') ? null : 'Guest');
+    const isBlocked = summary.toLowerCase().includes('blocked');
+    if (dtstart) events.push({ guestName, dtstart, dtend, guests, isBlocked });
+  }
+  return events;
+}
+
+async function fetchCal(prop) {
+  try {
+    const r = await fetch(prop.url);
+    return parseICS(await r.text());
+  } catch(e) { return null; }
+}
+
+async function loadAll() {
+  document.getElementById('loading') && (document.getElementById('report').innerHTML = '<div id="loading">Refreshing calendars...</div>');
+  const results = await Promise.all(PROPS.map(p => fetchCal(p)));
+  results.forEach((r,i) => { calData[PROPS[i].name] = r; });
+  renderReport();
+}
+
+function renderReport() {
+  const d = currentDate;
+  const dateStr = toYMD(d);
+  const dow = d.getDay();
+  const dateLabel = `${DAYS[dow]}, ${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+
+  const prevDay = new Date(d); prevDay.setDate(d.getDate()-1);
+  const nextDay = new Date(d); nextDay.setDate(d.getDate()+1);
+  const prevDow = prevDay.getDay();
+  const nextDow = nextDay.getDay();
+
+  let checkins=0, checkouts=0, trashCount=0, inspections=0;
+  const shores = {};
+
+  PROPS.forEach(prop => {
+    const shore = prop.shore;
+    if (!shores[shore]) shores[shore] = [];
+    const events = calData[prop.name];
+    const tasks = [];
+
+    if (!events) {
+      tasks.push({type:'idle', text:'Calendar unavailable — check connection'});
+    } else {
+      const todayIn = events.find(e => !e.isBlocked && e.dtstart === dateStr);
+      const todayOut = events.find(e => !e.isBlocked && e.dtend === dateStr);
+      const occupied = events.some(e => !e.isBlocked && e.dtstart < dateStr && e.dtend > dateStr);
+
+      if (todayIn) {
+        checkins++;
+        tasks.push({type:'checkin', text:`${todayIn.guestName} checking in${todayIn.guests ? ' · '+todayIn.guests+' guests' : ''}`});
+      }
+      if (todayOut) {
+        checkouts++;
+        tasks.push({type:'checkout', text:`${todayOut.guestName} checking out`});
+        if (!todayIn) {
+          inspections++;
+          tasks.push({type:'inspect', text:'Post-checkout walkthrough — note any repairs needed'});
+        }
+      }
+
+      if (prop.trash.includes(dow)) {
+        trashCount++;
+        tasks.push({type:'trash', text:'Set out trash bins tonight'});
+      }
+      if (prop.trash.includes(prevDow)) {
+        tasks.push({type:'trash', text:'Bring trash bins back in this morning'});
+      }
+
+      prop._occupied = (occupied && !todayOut) || !!todayIn;
+    }
+
+    if (tasks.length === 0) tasks.push({type:'idle', text:'No tasks today — property is clear'});
+    shores[shore].push({prop, tasks});
+  });
+
+  const totalTasks = checkins + checkouts + trashCount + inspections;
+  const nowStr = new Date().toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit', timeZone:'Pacific/Honolulu'});
+
+  let html = `
+    <div class="header">
+      <div class="brand">Hawaii Haus</div>
+      <div class="report-title">Daily Ops Report</div>
+      <div class="report-date">${dateLabel}</div>
+    </div>
+    <div class="summary-grid">
+      <div class="stat"><div class="stat-val">${checkins}</div><div class="stat-label">Check-ins</div></div>
+      <div class="stat"><div class="stat-val">${checkouts}</div><div class="stat-label">Check-outs</div></div>
+      <div class="stat"><div class="stat-val">${trashCount}</div><div class="stat-label">Trash</div></div>
+      <div class="stat"><div class="stat-val">${inspections}</div><div class="stat-label">Inspections</div></div>
+    </div>
+    <div class="section">`;
+
+  if (totalTasks === 0) {
+    html += `<div class="status-msg">All clear today — no check-ins, check-outs, or trash tasks across all four properties.</div>`;
+  }
+
+  Object.entries(shores).forEach(([shore, items]) => {
+    html += `<div class="shore-header">${shore}</div>`;
+    items.forEach(({prop, tasks}) => {
+      const statusClass = prop._occupied ? 'badge-occupied' : 'badge-vacant';
+      const statusLabel = prop._occupied ? 'Occupied' : 'Vacant';
+      html += `
+        <div class="prop-block">
+          <div class="prop-head">
+            <div>
+              <div class="prop-name">${prop.name}</div>
+              <div class="prop-backend">${prop.backend}</div>
+            </div>
+            <span class="prop-badge ${statusClass}">${statusLabel}</span>
+          </div>`;
+      tasks.forEach(t => {
+        html += `<div class="task-row"><span class="tag tag-${t.type}">${tagLabel(t.type)}</span><span>${t.text}</span></div>`;
+      });
+      html += `</div>`;
+    });
+  });
+
+  html += `</div>
+    <div class="footer">
+      <span>Hawaii Haus Property Operations</span>
+      <span>Generated ${nowStr} HST</span>
+    </div>`;
+
+  document.getElementById('report').innerHTML = html;
+}
+
+function tagLabel(t) {
+  return {checkin:'Check-in',checkout:'Check-out',trash:'Trash',inspect:'Inspect',idle:'All clear'}[t]||t;
+}
+function changeDay(n) { currentDate.setDate(currentDate.getDate()+n); renderReport(); }
+function goToday() { currentDate=new Date(); currentDate.setHours(0,0,0,0); renderReport(); }
+
+loadAll();
+</script>
+</body>
+</html>
